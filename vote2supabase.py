@@ -492,15 +492,46 @@ def display_voting_interface():
     if 'current_page' not in st.session_state:
         st.session_state.current_page = 1
 
-    # 页头跳转页面控件
-    col1, col2 = st.columns([3, 1])
+    # 显示已选口号详情
+    if current_count > 0:
+        selected_slogans = df[df['序号'].isin(current_selection)]
+        with st.expander(f"📋 查看已选口号 ({current_count}条)", expanded=False):
+            st.write("**您已选择的口号：**")
+            for _, row in selected_slogans.iterrows():
+                st.write(f"✅ {row['序号']}. {row['口号']}")
+            
+            if st.button("🗑️ 清空所有选择", key="clear_all"):
+                # 从Supabase删除所有该用户的投票
+                try:
+                    if st.session_state.supabase:
+                        st.session_state.supabase.table('votes')\
+                            .delete()\
+                            .eq('voter_id', voter_id)\
+                            .execute()
+                    
+                    st.session_state.all_votes_data[voter_id]["votes"] = []
+                    update_votes_dataframe()
+                    st.success("已清空所有选择")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"清空失败: {e}")
+
+    # 分页控件
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        if st.button("⬅️ 上一页", key="prev_page") and st.session_state.current_page > 1:
+            st.session_state.current_page -= 1
+            st.rerun()
     with col2:
-        st.write("**页面跳转**")
-        page_input_top = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
-                                       value=st.session_state.current_page, key="page_jump_top",
-                                       label_visibility="collapsed")
-        if page_input_top != st.session_state.current_page:
-            st.session_state.current_page = page_input_top
+        st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
+        page_input = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
+                                   value=st.session_state.current_page, key="page_jump")
+        if page_input != st.session_state.current_page:
+            st.session_state.current_page = page_input
+            st.rerun()
+    with col3:
+        if st.button("下一页 ➡️", key="next_page") and st.session_state.current_page < total_pages:
+            st.session_state.current_page += 1
             st.rerun()
 
     # 过滤数据
@@ -563,19 +594,8 @@ def display_voting_interface():
         else:
             st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
 
-    # 页尾跳转页面控件
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.write("**页面跳转**")
-        page_input_bottom = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
-                                          value=st.session_state.current_page, key="page_jump_bottom",
-                                          label_visibility="collapsed")
-        if page_input_bottom != st.session_state.current_page:
-            st.session_state.current_page = page_input_bottom
-            st.rerun()
-
     # 单独的提交投票按钮
+    st.markdown("---")
     st.write("### 完成选择后提交投票")
     
     current_selection = st.session_state.all_votes_data.get(voter_id, {"votes": []})["votes"]
@@ -583,6 +603,11 @@ def display_voting_interface():
     
     if current_count > 0:
         st.info(f"您当前选择了 {current_count} 条口号")
+        
+        with st.expander("📋 查看最终选择", expanded=False):
+            selected_slogans = df[df['序号'].isin(current_selection)]
+            for _, row in selected_slogans.iterrows():
+                st.write(f"✅ {row['序号']}. {row['口号']}")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -839,3 +864,4 @@ if __name__ == "__main__":
         admin_interface()
     else:
         main()
+去掉上一页下一页。跳转页面在页尾也放一个。去掉显示已选口号详情。投票时间按照北京时间修复
