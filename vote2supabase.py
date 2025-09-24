@@ -5,7 +5,7 @@ import os
 import json
 import requests
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import time
 import copy
 from supabase import create_client, Client
@@ -29,6 +29,13 @@ st.set_page_config(
     page_icon="🏆",
     layout="wide"
 )
+
+# 获取北京时间
+def get_beijing_time():
+    """获取北京时间"""
+    utc_now = datetime.now(timezone.utc)
+    beijing_time = utc_now.astimezone(timezone(timedelta(hours=8)))
+    return beijing_time
 
 # 初始化session state - 增强版本
 def initialize_session_state():
@@ -65,6 +72,8 @@ def initialize_session_state():
         st.session_state.supabase = init_supabase()
     if 'auto_save_enabled' not in st.session_state:
         st.session_state.auto_save_enabled = True
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 1
 
 # 调用初始化
 initialize_session_state()
@@ -173,14 +182,14 @@ def save_vote_to_supabase(voter_id, slogan_id, voted=False):
         # 检查是否已存在
         response = st.session_state.supabase.table('votes')\
             .select('*')\
-            .eq('voter_id', voter_id)\
+            .eq('voter_id', voter_id)\\
             .eq('slogan_id', slogan_id)\
             .execute()
         
         if response.data:
             # 更新现有记录
             st.session_state.supabase.table('votes')\
-                .update({'voted': voted, 'updated_at': datetime.now().isoformat()})\
+                .update({'voted': voted, 'updated_at': get_beijing_time().isoformat()})\
                 .eq('voter_id', voter_id)\
                 .eq('slogan_id', slogan_id)\
                 .execute()
@@ -190,8 +199,8 @@ def save_vote_to_supabase(voter_id, slogan_id, voted=False):
                 'voter_id': voter_id,
                 'slogan_id': slogan_id,
                 'voted': voted,
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat()
+                'created_at': get_beijing_time().isoformat(),
+                'updated_at': get_beijing_time().isoformat()
             }).execute()
         
         return True
@@ -231,7 +240,7 @@ def save_voter_status_to_supabase(voter_id, voted):
         # 更新所有记录的状态
         for record in response.data:
             st.session_state.supabase.table('votes')\
-                .update({'voted': voted, 'updated_at': datetime.now().isoformat()})\
+                .update({'voted': voted, 'updated_at': get_beijing_time().isoformat()})\
                 .eq('voter_id', voter_id)\
                 .eq('slogan_id', record['slogan_id'])\
                 .execute()
@@ -297,12 +306,17 @@ def update_votes_dataframe():
         
         votes_data = []
         for record in response.data:
+            # 转换时间为北京时间
+            vote_time_utc = datetime.fromisoformat(record['created_at'].replace('Z', '+00:00'))
+            beijing_time = vote_time_utc.astimezone(timezone(timedelta(hours=8)))
+            vote_time_str = beijing_time.strftime("%Y-%m-%d %H:%M:%S")
+            
             votes_data.append({
                 "投票人": record['voter_id'],
                 "口号序号": record['slogan_id'],
-                "投票时间": record['created_at']
+                "投票时间": vote_time_str
             })
-        
+
         if votes_data:
             st.session_state.votes_df = pd.DataFrame(votes_data)
         else:
@@ -442,7 +456,7 @@ def display_voting_result():
     st.info("💫 您的投票已成功提交，无法再次修改。如需帮助请联系管理员。")
 
 def display_voting_interface():
-    """显示投票界面 - 自动保存版本"""
+    """显示投票界面 - 简化版本"""
     if st.session_state.slogan_df is None:
         st.error("数据加载失败，请刷新页面重试")
         return
@@ -489,50 +503,20 @@ def display_voting_interface():
     page_size = 50
     total_pages = (len(df) + page_size - 1) // page_size
 
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 1
-
-    # 显示已选口号详情
-    if current_count > 0:
-        selected_slogans = df[df['序号'].isin(current_selection)]
-        with st.expander(f"📋 查看已选口号 ({current_count}条)", expanded=False):
-            st.write("**您已选择的口号：**")
-            for _, row in selected_slogans.iterrows():
-                st.write(f"✅ {row['序号']}. {row['口号']}")
-            
-            if st.button("🗑️ 清空所有选择", key="clear_all"):
-                # 从Supabase删除所有该用户的投票
-                try:
-                    if st.session_state.supabase:
-                        st.session_state.supabase.table('votes')\
-                            .delete()\
-                            .eq('voter_id', voter_id)\
-                            .execute()
-                    
-                    st.session_state.all_votes_data[voter_id]["votes"] = []
-                    update_votes_dataframe()
-                    st.success("已清空所有选择")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"清空失败: {e}")
-
-    # 分页控件
+    # 顶部页面跳转控件
+    st.markdown("---")
+    st.write("### 页面导航")
+    
     col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        if st.button("⬅️ 上一页", key="prev_page") and st.session_state.current_page > 1:
-            st.session_state.current_page -= 1
-            st.rerun()
     with col2:
         st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
         page_input = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
-                                   value=st.session_state.current_page, key="page_jump")
+                                   value=st.session_state.current_page, key="page_jump_top")
         if page_input != st.session_state.current_page:
             st.session_state.current_page = page_input
             st.rerun()
-    with col3:
-        if st.button("下一页 ➡️", key="next_page") and st.session_state.current_page < total_pages:
-            st.session_state.current_page += 1
-            st.rerun()
+    
+    st.markdown("---")
 
     # 过滤数据
     filtered_df = df
@@ -546,7 +530,7 @@ def display_voting_interface():
 
     st.write("### 请选择您喜欢的口号（可多选）：")
     
-    # 自动保存的界面 - 不使用form
+    # 自动保存的界面
     new_selections = set(current_selection)
     selections_changed = False
     
@@ -561,7 +545,6 @@ def display_voting_interface():
         with col1:
             st.write(f"**{slogan_id}.** {slogan_text}")
         with col2:
-            # 使用checkbox的on_change参数实现自动保存
             is_selected = st.checkbox(
                 "选择",
                 value=slogan_id in current_selection,
@@ -594,18 +577,32 @@ def display_voting_interface():
         else:
             st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
 
-    # 单独的提交投票按钮
+    # 底部页面跳转控件
     st.markdown("---")
+    st.write("### 页面导航")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
+        page_input = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
+                                   value=st.session_state.current_page, key="page_jump_bottom")
+        if page_input != st.session_state.current_page:
+            st.session_state.current_page = page_input
+            st.rerun()
+    
+    st.markdown("---")
+
+    # 最终选择和提交区域
     st.write("### 完成选择后提交投票")
     
-    current_selection = st.session_state.all_votes_data.get(voter_id, {"votes": []})["votes"]
-    current_count = len(current_selection)
+    current_selection_list = st.session_state.all_votes_data.get(voter_id, {"votes": []})["votes"]
+    current_count = len(current_selection_list)
     
     if current_count > 0:
         st.info(f"您当前选择了 {current_count} 条口号")
         
         with st.expander("📋 查看最终选择", expanded=False):
-            selected_slogans = df[df['序号'].isin(current_selection)]
+            selected_slogans = df[df['序号'].isin(current_selection_list)]
             for _, row in selected_slogans.iterrows():
                 st.write(f"✅ {row['序号']}. {row['口号']}")
     
@@ -640,7 +637,7 @@ def display_voting_interface():
                     st.balloons()
                     
                     with st.expander("您的投票详情", expanded=True):
-                        selected_slogans = df[df['序号'].isin(current_selection)]
+                        selected_slogans = df[df['序号'].isin(current_selection_list)]
                         for _, row in selected_slogans.iterrows():
                             st.write(f"**{row['序号']}.** {row['口号']}")
                     
@@ -831,7 +828,7 @@ def admin_interface():
     st.download_button(
         label="📥 下载完整结果",
         data=csv,
-        file_name=f"口号评选结果_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        file_name=f"口号评选结果_{get_beijing_time().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
         key="download_results"
     )
