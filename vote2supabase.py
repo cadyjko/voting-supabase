@@ -597,21 +597,6 @@ def display_voting_interface():
         else:
             st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
 
-    # 底部页面跳转控件
-    st.markdown("---")
-    st.write("### 页面导航")
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
-        page_input = st.number_input("跳转到页面", min_value=1, max_value=total_pages,
-                                     value=st.session_state.current_page, key="page_jump_bottom")
-        if page_input != st.session_state.current_page:
-            st.session_state.current_page = page_input
-            st.rerun()
-
-    st.markdown("---")
-
     # 最终选择和提交区域
     st.write("### 完成选择后提交投票")
 
