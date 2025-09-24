@@ -493,13 +493,17 @@ def display_voting_interface():
         st.session_state.current_page = 1
 
     # 分页控件
-    col2 = st.columns([2])
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+            st.rerun()
     with col2:
         st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
         page_input = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
                                    value=st.session_state.current_page, key="page_jump")
         if page_input != st.session_state.current_page:
             st.session_state.current_page = page_input
+            st.rerun()
+    with col3:
             st.rerun()
 
     # 过滤数据
