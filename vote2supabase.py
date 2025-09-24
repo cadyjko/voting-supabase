@@ -72,7 +72,7 @@ initialize_session_state()
 def load_slogan_data_from_github():
     """从GitHub Raw URL加载口号数据"""
     try:
-        github_raw_url = "https://raw.githubusercontent.com/cadyjko/slogan/main/slogans.xlsx"
+        github_raw_url = "https://raw.githubusercontent.com/cadyjko/voting-supabase/main/slogans.xlsx"
         response = requests.get(github_raw_url)
         response.raise_for_status()
         df = pd.read_excel(BytesIO(response.content))
