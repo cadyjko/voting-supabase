@@ -167,6 +167,8 @@ def load_all_votes_data():
                 }
             
             votes_data[voter_id]["votes"].append(slogan_id)
+            
+            votes_data[voter_id]["votes"].append(slogan_id)
         
         return votes_data
     except Exception as e:
