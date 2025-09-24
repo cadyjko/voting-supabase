@@ -65,6 +65,10 @@ def initialize_session_state():
         st.session_state.supabase = init_supabase()
     if 'auto_save_enabled' not in st.session_state:
         st.session_state.auto_save_enabled = True
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 1
+    if 'last_selection_time' not in st.session_state:
+        st.session_state.last_selection_time = 0
 
 # 调用初始化
 initialize_session_state()
@@ -442,7 +446,7 @@ def display_voting_result():
     st.info("💫 您的投票已成功提交，无法再次修改。如需帮助请联系管理员。")
 
 def display_voting_interface():
-    """显示投票界面 - 自动保存版本"""
+    """显示投票界面 - 完全自动保存版本"""
     if st.session_state.slogan_df is None:
         st.error("数据加载失败，请刷新页面重试")
         return
@@ -461,6 +465,7 @@ def display_voting_interface():
     else:
         st.header(f"欢迎 {voter_id}，请选出最符合南岳衡山全球旅游品牌宣传的口号")
     
+    # 状态显示和刷新按钮
     status_col1, status_col2 = st.columns([2, 1])
     with status_col1:
         if voted:
@@ -481,58 +486,25 @@ def display_voting_interface():
         display_voting_result()
         return
 
+    # 进度条
     progress = min(current_count / max_votes, 1.0)
     st.progress(progress, text=f"{current_count}/{max_votes}")
 
+    # 搜索框
     search_term = st.text_input("搜索口号", placeholder="输入关键词筛选口号", key="search_slogan")
 
+    # 分页设置
     page_size = 50
     total_pages = (len(df) + page_size - 1) // page_size
 
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 1
-
-    # 显示已选口号详情
-    if current_count > 0:
-        selected_slogans = df[df['序号'].isin(current_selection)]
-        with st.expander(f"📋 查看已选口号 ({current_count}条)", expanded=False):
-            st.write("**您已选择的口号：**")
-            for _, row in selected_slogans.iterrows():
-                st.write(f"✅ {row['序号']}. {row['口号']}")
-            
-            if st.button("🗑️ 清空所有选择", key="clear_all"):
-                # 从Supabase删除所有该用户的投票
-                try:
-                    if st.session_state.supabase:
-                        st.session_state.supabase.table('votes')\
-                            .delete()\
-                            .eq('voter_id', voter_id)\
-                            .execute()
-                    
-                    st.session_state.all_votes_data[voter_id]["votes"] = []
-                    update_votes_dataframe()
-                    st.success("已清空所有选择")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"清空失败: {e}")
-
-    # 分页控件
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        if st.button("⬅️ 上一页", key="prev_page") and st.session_state.current_page > 1:
-            st.session_state.current_page -= 1
-            st.rerun()
-    with col2:
-        st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
-        page_input = st.number_input("跳转到页面", min_value=1, max_value=total_pages, 
-                                   value=st.session_state.current_page, key="page_jump")
-        if page_input != st.session_state.current_page:
-            st.session_state.current_page = page_input
-            st.rerun()
-    with col3:
-        if st.button("下一页 ➡️", key="next_page") and st.session_state.current_page < total_pages:
-            st.session_state.current_page += 1
-            st.rerun()
+    # 顶部和底部都放置分页控件 - 方便翻页
+    st.markdown("---")
+    st.write("### 页面导航")
+    
+    # 顶部翻页控件
+    render_pagination_controls(total_pages, "top")
+    
+    st.markdown("---")
 
     # 过滤数据
     filtered_df = df
@@ -546,9 +518,8 @@ def display_voting_interface():
 
     st.write("### 请选择您喜欢的口号（可多选）：")
     
-    # 自动保存的界面 - 不使用form
+    # 完全自动保存 - 不使用form
     new_selections = set(current_selection)
-    selections_changed = False
     
     # 显示当前页的口号选择框
     for _, row in current_page_df.iterrows():
@@ -570,55 +541,65 @@ def display_voting_interface():
                 label_visibility="collapsed"
             )
         
-        # 实时更新选择
+        # 实时更新选择并自动保存
         if is_selected != (slogan_id in current_selection):
             if is_selected:
                 new_selections.add(slogan_id)
             else:
                 new_selections.discard(slogan_id)
-            selections_changed = True
-    
-    # 如果选择发生变化，自动保存
-    if selections_changed and not voted:
-        if len(new_selections) <= max_votes:
-            # 更新session state
-            st.session_state.all_votes_data[voter_id]["votes"] = list(new_selections)
             
-            # 自动保存到Supabase
-            if auto_save_votes(voter_id, list(new_selections)):
-                st.success("✅ 选择已自动保存")
-                update_votes_dataframe()
-                st.rerun()
+            # 立即自动保存
+            if len(new_selections) <= max_votes:
+                # 更新session state
+                st.session_state.all_votes_data[voter_id]["votes"] = list(new_selections)
+                
+                # 自动保存到Supabase
+                if auto_save_votes(voter_id, list(new_selections)):
+                    st.success("✅ 选择已自动保存")
+                    update_votes_dataframe()
+                    # 短暂显示成功消息后继续
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("保存失败，请重试")
             else:
-                st.error("保存失败，请重试")
-        else:
-            st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
-
-    # 单独的提交投票按钮
+                st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
+    
+    # 底部翻页控件
     st.markdown("---")
+    st.write("### 页面导航")
+    render_pagination_controls(total_pages, "bottom")
+    st.markdown("---")
+
+    # 最终选择和提交区域
     st.write("### 完成选择后提交投票")
     
-    current_selection = st.session_state.all_votes_data.get(voter_id, {"votes": []})["votes"]
-    current_count = len(current_selection)
+    # 显示当前选择状态
+    current_selection_list = st.session_state.all_votes_data.get(voter_id, {"votes": []})["votes"]
+    current_count = len(current_selection_list)
     
     if current_count > 0:
         st.info(f"您当前选择了 {current_count} 条口号")
         
         with st.expander("📋 查看最终选择", expanded=False):
-            selected_slogans = df[df['序号'].isin(current_selection)]
+            selected_slogans = df[df['序号'].isin(current_selection_list)]
             for _, row in selected_slogans.iterrows():
                 st.write(f"✅ {row['序号']}. {row['口号']}")
     
+    # 提交投票按钮
+    st.write("")  # 空行增加间距
+    
+    can_submit = 1 <= current_count <= max_votes
+    
+    if not can_submit:
+        if current_count == 0:
+            st.error("❌ 请至少选择一条口号")
+        else:
+            st.error(f"❌ 选择数量超过限制（最多{max_votes}条）")
+    
+    # 居中显示提交按钮
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        can_submit = 1 <= current_count <= max_votes
-        
-        if not can_submit:
-            if current_count == 0:
-                st.error("❌ 请至少选择一条口号")
-            else:
-                st.error(f"❌ 选择数量超过限制（最多{max_votes}条）")
-        
         if st.button("✅ 最终提交投票", 
                     type="primary", 
                     use_container_width=True,
@@ -639,8 +620,9 @@ def display_voting_interface():
                     st.success(f"🎉 投票成功！您选择了 {current_count} 条口号。感谢您的参与！")
                     st.balloons()
                     
+                    # 显示投票结果
                     with st.expander("您的投票详情", expanded=True):
-                        selected_slogans = df[df['序号'].isin(current_selection)]
+                        selected_slogans = df[df['序号'].isin(current_selection_list)]
                         for _, row in selected_slogans.iterrows():
                             st.write(f"**{row['序号']}.** {row['口号']}")
                     
@@ -649,7 +631,40 @@ def display_voting_interface():
                 else:
                     st.error("投票提交失败，请重试或联系管理员")
 
-# 管理员界面
+def render_pagination_controls(total_pages, position):
+    """渲染分页控件"""
+    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+    
+    with col1:
+        if st.button("⬅️ 上一页", key=f"prev_page_{position}", use_container_width=True):
+            if st.session_state.current_page > 1:
+                st.session_state.current_page -= 1
+                st.rerun()
+    
+    with col2:
+        if st.button("下一页 ➡️", key=f"next_page_{position}", use_container_width=True):
+            if st.session_state.current_page < total_pages:
+                st.session_state.current_page += 1
+                st.rerun()
+    
+    with col3:
+        st.write(f"**第 {st.session_state.current_page} 页 / 共 {total_pages} 页**")
+    
+    with col4:
+        # 快速跳转下拉菜单
+        page_options = list(range(1, total_pages + 1))
+        selected_page = st.selectbox(
+            "快速跳转",
+            options=page_options,
+            index=st.session_state.current_page - 1,
+            key=f"page_selector_{position}",
+            label_visibility="collapsed"
+        )
+        if selected_page != st.session_state.current_page:
+            st.session_state.current_page = selected_page
+            st.rerun()
+
+# 管理员界面（保持不变）
 def admin_interface():
     """管理员界面"""
     st.title("🏆 口号评选系统 - 管理员界面")
@@ -749,7 +764,6 @@ def admin_interface():
                                     st.rerun()
                                 else:
                                     try:
-                                        # 从Supabase删除
                                         if st.session_state.supabase:
                                             st.session_state.supabase.table('votes')\
                                                 .delete()\
