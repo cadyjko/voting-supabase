@@ -358,17 +358,17 @@ def check_voter_status():
     
     return "not_started"
 
-def display_pagination_controls(total_pages, position="top"):
+def display_pagination_controls(total_pages):
     """显示分页控件"""
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
     
     with col1:
-        if st.button("◀", key=f"prev_{position}") and st.session_state.current_page > 1:
+        if st.button("上一页", key="prev_page") and st.session_state.current_page > 1:
             st.session_state.current_page -= 1
             st.rerun()
     
     with col2:
-        if st.button("▶", key=f"next_{position}") and st.session_state.current_page < total_pages:
+        if st.button("下一页", key="next_page") and st.session_state.current_page < total_pages:
             st.session_state.current_page += 1
             st.rerun()
     
@@ -376,13 +376,11 @@ def display_pagination_controls(total_pages, position="top"):
         st.write(f"**第 {st.session_state.current_page} 页，共 {total_pages} 页**")
     
     with col4:
-        if st.button("➖", key=f"minus_{position}") and st.session_state.current_page > 1:
-            st.session_state.current_page -= 1
-            st.rerun()
-    
-    with col5:
-        if st.button("➕", key=f"plus_{position}") and st.session_state.current_page < total_pages:
-            st.session_state.current_page += 1
+        page_input = st.number_input("跳转页面", min_value=1, max_value=total_pages, 
+                                   value=st.session_state.current_page, key="page_jump",
+                                   label_visibility="collapsed")
+        if page_input != st.session_state.current_page:
+            st.session_state.current_page = page_input
             st.rerun()
 
 def main():
@@ -519,10 +517,10 @@ def display_voting_interface():
     if 'current_page' not in st.session_state:
         st.session_state.current_page = 1
 
-    # 顶部翻页控件
-    display_pagination_controls(total_pages, "top")
+    # 分页控件
+    display_pagination_controls(total_pages)
 
-    # 显示最终选择（简化版，去掉清空功能）
+    # 显示最终选择
     if current_count > 0:
         selected_slogans = df[df['序号'].isin(current_selection)]
         with st.expander(f"📋 查看最终选择 ({current_count}条)", expanded=False):
@@ -589,9 +587,6 @@ def display_voting_interface():
                 st.error("保存失败，请重试")
         else:
             st.error(f"选择数量超过限制，最多只能选择 {max_votes} 条")
-
-    # 底部翻页控件
-    display_pagination_controls(total_pages, "bottom")
 
     # 单独的提交投票按钮
     st.markdown("---")
